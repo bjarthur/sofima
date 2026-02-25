@@ -27,6 +27,7 @@ import dataclasses_json
 import numpy as np
 from scipy import spatial
 from sofima import map_utils
+import concurrent.futures
 
 Subvolume = subvolume.Subvolume
 SubvolumeOrMany = subvolume_processor.SubvolumeOrMany
@@ -274,7 +275,12 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
 
       done.add(z)
 
-  def process(self, subvol: Subvolume) -> SubvolumeOrMany:
+  def process(self,
+              subvol: Subvolume,
+              parallelism: int = 1,
+              verbose: bool = False,
+              ) -> SubvolumeOrMany:
+
     box = subvol.bbox
     coord_map = subvol.data
     xblock_volstore = self._open_volume(self._xblock_volinfo)
@@ -306,18 +312,26 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
     ret = coord_map.copy()
     done = set()
     # Interpolate coord_map blockwise.
-    for s, e in ranges:
-      self._interpolate(
-          ret,
-          box,
-          s,
-          e,
-          load_main_inv,
-          load_last_inv,
-          load_xblock,
-          load_xblock_inv,
-          done,
-      )
+    with concurrent.futures.ProcessPoolExecutor(max_workers=parallelism) as executor:
+        futures = []
+        for s, e in ranges:
+          if verbose: print(s, '-', e)
+          futures.append(
+              executor.submit(
+                  self._interpolate,
+                  ret,
+                  box,
+                  s,
+                  e,
+                  load_main_inv,
+                  load_last_inv,
+                  load_xblock,
+                  load_xblock_inv,
+                  done,
+              )
+          )
+    for future in concurrent.futures.as_completed(futures):
+        future.result()
 
     # Check that all sections have been processed.
     assert not set(range(box.start[2], box.end[2])) - done
