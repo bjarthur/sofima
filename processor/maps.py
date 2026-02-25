@@ -312,26 +312,26 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
     ret = coord_map.copy()
     done = set()
     # Interpolate coord_map blockwise.
-    with concurrent.futures.ProcessPoolExecutor(max_workers=parallelism) as executor:
-        futures = []
-        for s, e in ranges:
-          if verbose: print(s, '-', e)
-          futures.append(
-              executor.submit(
-                  self._interpolate,
-                  ret,
-                  box,
-                  s,
-                  e,
-                  load_main_inv,
-                  load_last_inv,
-                  load_xblock,
-                  load_xblock_inv,
-                  done,
-              )
-          )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallelism) as executor:
+      futures = []
+      for s, e in ranges:
+        futures.append(
+            executor.submit(
+                self._interpolate,
+                ret,
+                box,
+                s,
+                e,
+                load_main_inv,
+                load_last_inv,
+                load_xblock,
+                load_xblock_inv,
+                done,
+            )
+        )
     for future in concurrent.futures.as_completed(futures):
-        future.result()
+      if verbose: print(s, '-', e)
+      future.result()
 
     # Check that all sections have been processed.
     assert not set(range(box.start[2], box.end[2])) - done
