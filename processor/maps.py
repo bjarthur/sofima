@@ -186,6 +186,7 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
     flat_box = bounding_box.BoundingBox(
         start=box.start, size=(box.size[0], box.size[1], 1)
     )
+    origin = np.array(box.start)
 
     # The interpolation is done so that the first section of the block ends up
     # at 'xblock_pre', the first section of following block at 'xblock_post',
@@ -253,20 +254,20 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
           # The output coordinate map here is the inverse of the argument
           # passed to warp() in the comment above, i.e.:
           #   (section * xblock_pre) * scaled_offset
-          interior_aligned = map_utils.compose_maps(
+          interior_aligned = map_utils.compose_maps_fast(
               data[:, rel_z : rel_z + 1, ...],  #
-              flat_box,
+              origin,
               self._stride,
               xblock_pre,
-              flat_box,
+              origin,
               self._stride,
           )
-          data[:, rel_z : rel_z + 1, ...] = map_utils.compose_maps(  #
+          data[:, rel_z : rel_z + 1, ...] = map_utils.compose_maps_fast(  #
               interior_aligned,
-              flat_box,
+              origin,
               self._stride,
               offset * scale,
-              flat_box,
+              origin,
               self._stride,
           )
         except spatial.qhull.QhullError:
@@ -274,7 +275,11 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
 
       done.add(z)
 
-  def process(self, subvol: Subvolume) -> SubvolumeOrMany:
+  def process(self,
+              subvol: Subvolume,
+              parallelism: int = 1,
+              verbose: bool = False,
+              ) -> SubvolumeOrMany:
     box = subvol.bbox
     coord_map = subvol.data
     xblock_volstore = self._open_volume(self._xblock_volinfo)
@@ -307,6 +312,7 @@ class ReconcileCrossBlockMaps(subvolume_processor.SubvolumeProcessor):
     done = set()
     # Interpolate coord_map blockwise.
     for s, e in ranges:
+      if verbose: print('(s,e) =', (s,e))
       self._interpolate(
           ret,
           box,
